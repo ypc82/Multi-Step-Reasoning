@@ -121,9 +121,13 @@ def load_words(args, examples):
     # add words in the paragraph
     for pid, p in examples.paragraphs.items():
         _insert(p.text)
+        # Customize
+        _insert(p.ans)
+        _insert(p.reform_qtext)
     # add words in the question
     for qid, q in examples.questions.items():
-        _insert(q.text.split(" "))  # the question text has been tokenized but then joined with " "
+        #_insert(q.text.split(" "))  # the question text has been tokenized but then joined with " "
+        _insert(q.text)
 
     return words
 

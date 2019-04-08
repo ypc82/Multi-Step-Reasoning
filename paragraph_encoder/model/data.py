@@ -154,29 +154,64 @@ class MultiCorpusDataset(Dataset):
         self.para_mode = para_mode
         self.train_time = train_time
         self.pid_list = list(self.corpus.paragraphs.keys())
+        self.qid_list = list(self.corpus.questions.keys())
+        self.total_para_num = len(self.corpus.paragraphs)
+
     def __len__(self):
-        if self.para_mode:
-            return len(self.corpus.paragraphs)
+        if self.args.src == 'arc':
+            return(len(self.corpus.questions) * len(self.corpus.paragraphs))
         else:
-            return len(self.corpus.questions)
+            if self.para_mode:
+                return len(self.corpus.paragraphs)
+            else:
+                return len(self.corpus.questions)
 
     def __getitem__(self, index):
-        if self.para_mode:
+        if self.args.src == 'arc':
             ex = {}
-            pid =  self.pid_list[index]
+            pid = self.pid_list[index % self.total_para_num]
             para = self.corpus.paragraphs[pid]
             assert pid == para.pid
             ex['document'] = para.text
-            ex['id'] = para.pid
-            ex['ans_occurance'] = para.ans_occurance
-            qid = para.qid
-            question = self.corpus.questions[qid]
-            ex['question'] = question.text
-            assert pid in question.pids
 
+            qid = self.qid_list[index // self.total_para_num]
+            question = self.corpus.questions[qid]
+            qtext = question.text
+            choice = question.choice_text
+            ex['question'] = qtext + choice
+            ex['ans_occurance'] = question.label
+            ex['id'] = qid
+            ex['pid'] = pid
+            
             return vectorize(self.args, ex)
+
         else:
-            raise NotImplementedError("later")
+            if self.para_mode:
+                ex = {}
+                pid =  self.pid_list[index]
+                para = self.corpus.paragraphs[pid]
+                assert pid == para.pid
+                ex['document'] = para.text
+                ex['id'] = para.pid
+                ex['ans_occurance'] = para.ans_occurance
+                
+                if self.args.src == 'scitail' and self.args.experiment_name == 'hypothesis':
+                    ex['question'] = para.reform_qtext
+
+                elif self.args.src == 'scitail' and self.args.experiment_name == 'question_answer':
+                    qid = para.qid
+                    question = self.corpus.questions[qid]
+                    ex['question'] = question.text + para.ans
+
+                else:
+                    qid = para.qid
+                    question = self.corpus.questions[qid]
+                    ex['question'] = question.text
+                    assert pid in question.pids
+
+                return vectorize(self.args, ex)
+            else:
+                raise NotImplementedError("later")
 
 
 # ------------------------------------------------------------------------------

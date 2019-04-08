@@ -32,7 +32,7 @@ def vectorize(args, ex):
         if ex['ans_occurance'] == 0:
             if np.random.binomial(1, args.neg_sample) == 0:
                 return
-    return document, question, ex['ans_occurance'], ex['id']
+    return document, question, ex['ans_occurance'], ex['id'], ex['pid']
 
 
 def batchify(args, para_mode, train_time):
@@ -49,10 +49,17 @@ def batchify_(args, batch, para_mode, train_time):
     batch = new_batch
     if len(batch) == 0:
         return None
-    ids = [ex[-1] for ex in batch]
-    docs = [ex[0] for ex in batch]
-    questions = [ex[1] for ex in batch]
-    num_occurances = [ex[-2] for ex in batch]
+    if args.src == 'arc':
+        docs = [ex[0] for ex in batch]
+        questions = [ex[1] for ex in batch]
+        num_occurances = [ex[2] for ex in batch]
+        ids = [ex[3] for ex in batch]
+        pids = [ex[4] for ex in batch]
+    else:
+        ids = [ex[-1] for ex in batch]
+        docs = [ex[0] for ex in batch]
+        questions = [ex[1] for ex in batch]
+        num_occurances = [ex[-2] for ex in batch]
     num_occurances = torch.LongTensor(num_occurances)
     # Batch documents and features
     max_length = max([d.size(0) for d in docs])
@@ -71,4 +78,4 @@ def batchify_(args, batch, para_mode, train_time):
         x2[i, :q.size(0)].copy_(q)
         x2_mask[i, :q.size(0)].fill_(0)
 
-    return x1, x1_mask, x2, x2_mask, num_occurances, ids
+    return x1, x1_mask, x2, x2_mask, num_occurances, ids, pids

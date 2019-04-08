@@ -28,6 +28,7 @@ def get_args():
     parser.add_argument('--gpu', type=int, default=-1)
     parser.add_argument('--data_workers', type=int, default=5)
     # Basics
+    parser.add_argument('--experiment_name', type=str, default=None)
     parser.add_argument('--model_dir', type=str)
     parser.add_argument('--model_name', type=str, default=None)
     parser.add_argument('--checkpoint', type='bool', default=True)
@@ -56,10 +57,10 @@ def get_args():
                         help='Maximum number of questions to keep in memory at once.')
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--embed_dir', type=str)
-    parser.add_argument('--word_embeddings_file', type=str, default='data/embeddings/fasttext')
+    parser.add_argument('--word_embeddings_file', type=str, default='embeddings/fasttext')
     parser.add_argument('--eval_file', type=str, default='web-dev.json')
     parser.add_argument('--verified_eval_file', type=str, default='verified-web-dev.json')
-    parser.add_argument('--eval_only', type=int, default=0, help='Load a saved model and evaluate on dev set')
+    parser.add_argument('--eval_only', action='store_true', help='Load a saved model and evaluate on dev set')
     parser.add_argument('--eval_correct_paras', type=int, default=0,
                         help='eval by sending only the correct paras of the doc')
     parser.add_argument('--train_correct_paras', type=int, default=0,
@@ -83,7 +84,7 @@ def get_args():
     parser.add_argument('--pretrained_words', type=int, default=1)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--neg_sample', type=float, default=1.0)
-    parser.add_argument('--test', type=int, default=0)
+    parser.add_argument('--test_only', action='store_true', help='Load a saved model and eval on test set')
 
     parser.add_argument('--test_batch_size', type=int, default=128)
     parser.add_argument('--use_tfidf_retriever', type=int, default=0, help='An additional tf-idf retriever to weed out paras')
@@ -161,7 +162,7 @@ def get_args():
     parser.add_argument(
         '--num_epochs',
         type=int,
-        default=100,
+        default=40,
         help='Number of epochs (default 40)'
     )
     parser.add_argument(
@@ -217,7 +218,7 @@ def get_args():
     if len(args.embedding_file) == 0:
         args.embedding_file = None
     else:
-        args.embedding_file = os.path.join(args.word_embeddings_file, args.embedding_file)
+        args.embedding_file = os.path.join(args.data_dir, args.word_embeddings_file, args.embedding_file)
         if not os.path.isfile(args.embedding_file):
             raise IOError('No such file: %s' % args.embedding_file)
     args.embedding_table = os.path.join(args.data_dir, args.src,  "embeddings",  args.domain,  args.embedding_table)

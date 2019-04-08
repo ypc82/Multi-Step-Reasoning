@@ -10,7 +10,9 @@ import time
 
 class MultiCorpus:
     class Paragraph:
-        def __init__(self, args, pid, text, answer_span, qid, tfidf):
+        def __init__(self, args, pid, text, qid=None, 
+                     answer_span=None, ans_occurance=None, 
+                     tfidf=None, ans=None, reform_qtext=None):
             """
             :param args:
             :param pid:
@@ -20,19 +22,30 @@ class MultiCorpus:
             :param tfidf:
             """
             self.args = args
-            self.pid = pid
-            self.text = text
-            self.answer_span = answer_span
-            self.ans_occurance = answer_span.shape[0]
-            self.qid = qid
-            self.tfidf_score = tfidf
-            self.model_score = None
+            self.pid = pid # 41141_para_0; 41141_para_4
+            self.text = text 
+            self.answer_span = answer_span # array([], dtype=float64); [[21 21]]
+            self.ans_occurance = ans_occurance # answer_span.shape[0] # 0; 1
+            self.qid = qid # 41141; 41141
+            self.tfidf_score = tfidf # 0.6386464443605253; 0.6386464443605253
+            self.model_score = None # doesn't have this field; doesn't have this field
+
+            # Customize
+            self.ans = ans
+            self.reform_qtext = reform_qtext
+            
+
     class Question:
-        def __init__(self, args, qid, text, pids):
-            self.args = args
-            self.qid = qid
-            self.text = text
-            self.pids = pids
+        def __init__(self, args, qid, text, pids=None, choice_text=None, reform_qtext=None, label=None):
+            self.args = args # Namespace(calculate_tfidf=True, small=False)
+            self.qid = qid # '140951'
+            self.text = text # ['ft', 'sill', ',', 'okla', 'made', 'plea', ',', 'arizona', 'land', ',', 'home', ',', 'father', "'s", 'land', ',', 'ask', 'return']
+            self.pids = pids # ['140951_para_0', '140951_para_1', '140951_para_2', '140951_para_3']
+
+            # Customize
+            self.choice_text = choice_text
+            self.reform_qtext = reform_qtext 
+            self.label = label
 
     def __init__(self, args):
 
@@ -103,6 +116,7 @@ class MultiCorpus:
 
         self.questions[qid] = question
 
+    
     def addQuestionParas(self, qid, qtext, paragraph_texts, paragraph_answer_spans):
 
         # for para in paragraphs:
@@ -119,13 +133,14 @@ class MultiCorpus:
 
             pid = qid + "_para_" + str(p_counter)
             para_ids.append(pid)
-            paragraph = self.Paragraph(self.args, pid, p_text, paragraph_answer_spans[p_counter], qid, tfidf_score)
+            #paragraph = self.Paragraph(self.args, pid, p_text, paragraph_answer_spans[p_counter], qid, tfidf_score)
+            paragraph = self.Paragraph(self.args, pid, p_text, None, qid, tfidf_score)
             self.paragraphs[pid] = paragraph
 
         question = self.Question(self.args, qid, qtext, para_ids)
 
         self.questions[qid] = question
-
+    
 
 def get_topk_tfidf(corpus):
     top1 = 0

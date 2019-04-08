@@ -22,3 +22,6 @@ class LSTMRetriever():
 
         scores, doc, ques = self.model(paras, para_mask, query, query_mask)
         return scores, doc.cpu().data.numpy(), ques.cpu().data.numpy()
+    
+    def get_vectors(self):
+        pass

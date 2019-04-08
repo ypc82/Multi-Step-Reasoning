@@ -1,25 +1,25 @@
-import torch
-import numpy as np
-import json
-import os
-import pickle
 import sys
+import os
+import json
+import pickle
 import logging
 import shutil
+import math
+import numpy as np
 from tqdm import tqdm
 
+import torch
 from torch.autograd import Variable
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data.sampler import RandomSampler
+from torch.utils.data.sampler import SequentialSampler
 
 import config
 from model import utils, data, vector
 from model.retriever import LSTMRetriever
 from multi_corpus import MultiCorpus
 
-from torch.utils.data.sampler import SequentialSampler, RandomSampler
-import math
 
 logger = logging.getLogger()
 
@@ -225,11 +225,10 @@ def print_vectors(args, para_vectors, question_vectors, corpus, train=False, tes
     if train:
         OUT_DIR = os.path.join(args.save_dir, args.src,  args.domain, "train/")
     else:
-        if args.is_test == 0:
+        if test == False:
             OUT_DIR = os.path.join(args.save_dir, args.src, args.domain, "dev/")
         else:
             OUT_DIR = os.path.join(args.save_dir, args.src, args.domain, "test/")
-
 
     logger.info("Printing vectors at {}".format(OUT_DIR))
     if not os.path.exists(OUT_DIR):
@@ -237,7 +236,6 @@ def print_vectors(args, para_vectors, question_vectors, corpus, train=False, tes
     else:
         shutil.rmtree(OUT_DIR, ignore_errors=True)
         os.makedirs(OUT_DIR)
-
 
     json.dump(qid2idx, open(OUT_DIR + 'map.json', 'w'))
     json.dump(all_correct_ans, open(OUT_DIR + 'correct_paras.json', 'w'))
@@ -277,7 +275,6 @@ def save_vectors(args, ret_model, corpus, data_loader, verified_dev_loader=None,
 
     get_topk(corpus)
     print_vectors(args, para_vectors, question_vectors, corpus, train, test)
-
 
 
 def get_topk(corpus):
@@ -459,16 +456,19 @@ def save(args, model, optimizer, filename, epoch=None):
     except BaseException:
         logger.warn('[ WARN: Saving failed... continuing anyway. ]')
 
+def load_pickle(args, file_name):
+    file_name = file_name + '.pkl'
+    fpath = os.path.join(args.data_dir, args.src, "data", args.domain, file_name)
+    logger.info(f"Loading pickle file from {fpath}")
+    with open(fpath, "rb") as fin:
+        data = pickle.load(fin)
+    return data
 
 # ------------------------------------------------------------------------------
 # Main.
 # ------------------------------------------------------------------------------
 
 def main(args):
-
-    # PRINT CONFIG
-    logger.info('-' * 100)
-    logger.info('CONFIG:\n%s' % json.dumps(vars(args), indent=4, sort_keys=True))
 
     # small can't test
     if args.small == 1:
@@ -479,33 +479,12 @@ def main(args):
         args.dev_file_name = args.dev_file_name + "_small"
         if args.test == 1:
             args.test_file_name = args.test_file_name + "_small"
-
-    args.train_file_name = args.train_file_name + ".pkl"
-    args.dev_file_name = args.dev_file_name + ".pkl"
-    if args.test == 1:
-        args.test_file_name = args.test_file_name + ".pkl"
-
-    logger.info("Loading pickle files")
-    fin = open(os.path.join(args.data_dir, args.src, "data", args.domain, args.train_file_name), "rb")
-    all_train_exs = pickle.load(fin)
-    fin.close()
-
-    fin = open(os.path.join(args.data_dir,  args.src, "data", args.domain, args.dev_file_name), "rb")
-    all_dev_exs = pickle.load(fin)
-    fin.close()
-    if args.test == 1:
-        fin = open(os.path.join(args.data_dir,  args.src, "data", args.domain, args.test_file_name), "rb")
-        all_test_exs = pickle.load(fin)
-        fin.close()
-
-    logger.info("Loading done!")
-
+    
+    all_train_exs = load_pickle(args, args.train_file_name)
     logger.info("Num train examples {}".format(len(all_train_exs.paragraphs)))
+    all_dev_exs = load_pickle(args, args.dev_file_name)
     logger.info("Num dev examples {}".format(len(all_dev_exs.paragraphs)))
-    if args.test == 1:
-        logger.info("Num test examples {}".format(len(all_test_exs.paragraphs)))
-
-
+    
     if args.pretrained is None:
         ret_model, optimizer, word_dict, feature_dict = init_from_scratch(args, all_train_exs)
     else:
@@ -514,13 +493,12 @@ def main(args):
     # make data loader
     logger.info("Making data loaders...")
     if word_dict == None:
+        logger.info('Build word dict (word_dict==None)...')
         args.word_dict = utils.build_word_dict(args, (all_train_exs, all_dev_exs))
         word_dict = args.word_dict
 
     train_loader = make_data_loader(args, all_train_exs, train_time=False) if args.eval_only else make_data_loader(args, all_train_exs, train_time=True)
     dev_loader = make_data_loader(args, all_dev_exs)
-    if args.test:
-        test_loader = make_data_loader(args, all_test_exs)
 
 
     if args.eval_only:
@@ -536,7 +514,7 @@ def main(args):
             save_vectors(args, ret_model, all_test_exs, test_loader, verified_dev_loader=None)
 
     else:
-        get_topk_tfidf(all_dev_exs)
+        #get_topk_tfidf(all_dev_exs)
         for epoch in range(args.num_epochs):
             stats['epoch'] = epoch
             train_binary_classification(args, ret_model, optimizer, train_loader, verified_dev_loader=None)
@@ -552,6 +530,197 @@ def main(args):
                 logger.info('Saving model at {}'.format(args.model_file))
                 logger.info("Logs saved at {}".format(args.log_file))
                 save(args, ret_model.model, optimizer, args.model_file, epoch=stats['epoch'])
+
+def test_mode(args):
+
+    all_test_exs = load_pickle(args, args.test_file_name)
+    logger.info("Num test paragraphs {}".format(len(all_test_exs.paragraphs)))
+    logger.info("Num test questions {}".format(len(all_test_exs.questions)))
+
+    ret_model, optimizer, word_dict, feature_dict = init_from_checkpoint(args)
+
+    logger.info("Making data loaders...")
+    test_loader = make_data_loader(args, all_test_exs)
+
+    logger.info("Get top K test paragraph")
+    #eval_scitail(args, ret_model, all_test_exs, test_loader)
+    result, question_vectors, paragraph_vectors = eval_arc(args, ret_model, all_test_exs, test_loader)
+    sorted_result = sort_result(result)
+
+
+    save_transform_vectors(args, question_vectors, paragraph_vectors)
+    save_topk_result(args, sorted_result, all_test_exs)
+
+
+def eval_scitail(args, ret_model, corpus, data_loader, save_scores=True):
+    total_exs = 0
+    args.train_time = False
+    ret_model.model.eval()
+    para_vectors = {}
+    question_vectors = {}
+
+    for idx, ex in enumerate(tqdm(data_loader)):
+        # ex: paragraph, question, label, pid
+
+        if ex is None:
+            raise BrokenPipeError
+
+        inputs = [e if e is None or type(e) != type(ex[0]) else Variable(e.cuda(async=True))
+                  for e in ex[:]]
+        ret_input = [*inputs[:4]]
+        total_exs += ex[0].size(0)
+
+        scores, doc, ques = ret_model.score_paras(*ret_input)
+        scores = scores.cpu().data.numpy()
+        scores = scores.reshape((-1))
+
+        if save_scores:
+            for i, pid in enumerate(ex[-1]):
+                para_vectors[pid] = doc[i]
+            for i, qid in enumerate([corpus.paragraphs[pid].qid for pid in ex[-1]]):
+                if qid not in question_vectors:
+                    question_vectors[qid] = ques[i]
+            for i, pid in enumerate(ex[-1]):
+                corpus.paragraphs[pid].model_score = scores[i]
+
+    get_topk(corpus)
+    #print_vectors(args, para_vectors, question_vectors, corpus, train, test)
+
+def eval_arc(args, ret_model, corpus, data_loader):
+    """ Return result_dic, question_vectors, paragraph_vectors
+    # result_dic: 
+        { 'qid0': [(score_p0, pid0), (score_p1, pid1), ..., (score_pn, pidn)],
+          'qid1': [(score_p0, pid0), (score_p1, pid1), ..., (score_pn, pidn)],
+          ...,
+          'qidm': [(score_p0, pid0), (score_p1, pid1), ..., (score_pn, pidn)],
+        }
+    """
+    total_exs = 0
+    args.train_time = False
+    ret_model.model.eval()
+
+    result_dic = {}
+    question_vectors = {}
+    paragraph_vectors = {}
+
+    for idx, ex in enumerate(tqdm(data_loader)):
+        # ex: x1, x1_mask, x2, x2_mask, num_occurances, ids, pids
+        # ex.shape: 7 x batch_size
+
+        if ex is None:
+            raise BrokenPipeError
+
+
+        inputs = [e if e is None or type(e) != type(ex[0]) else Variable(e.cuda(async=True))
+                  for e in ex[:]]
+        ret_input = [*inputs[:4]]
+        total_exs += ex[0].size(0)
+
+        scores, doc, ques = ret_model.score_paras(*ret_input)
+        scores = scores.cpu().data.numpy()
+        scores = scores.reshape((-1))
+        
+        for i in range(len(scores)):
+            qid = ex[5][i]
+            pid = ex[6][i]
+            score = scores[i]
+            result_dic.setdefault(qid, []).append((score, pid))
+            
+            if qid not in question_vectors:
+                question_vectors[qid] = ques[i]
+            if pid not in paragraph_vectors:
+                paragraph_vectors[pid] = doc[i]
+    
+    return result_dic, question_vectors, paragraph_vectors
+
+def sort_result(result):
+    sorted_result = {}
+    for qid, plist in tqdm(result.items()):
+        sorted_plist = sorted(plist, key=lambda x:x[0], reverse=True)
+        sorted_result[qid] = sorted_plist
+    output_path = os.path.join(args.model_dir, 'sorted_result.pkl')
+    logger.info(f"Write sorted result to {output_path}")
+    with open(output_path, 'wb') as outfile:
+        pickle.dump(sorted_result, outfile)
+    return sorted_result
+
+def save_transform_vectors(args, q_vectors, p_vectors):
+    def get_vectors(vecs):
+        vid2idx = {}
+        all_vecs = []
+        for i, (vid, vec) in enumerate(vecs.items()):
+            vid2idx[vid] = i
+            all_vecs.append(vec)
+        all_vecs = np.stack(all_vecs)
+        return vid2idx, all_vecs
+
+    qid2idx, all_q_vecs = get_vectors(q_vectors)
+    pid2idx, all_p_vecs = get_vectors(p_vectors)
+        
+    # Find the upper bound for the L2 norm for all paragraphs
+    from numpy.linalg import norm
+    p_norms = norm(all_p_vecs, axis=1)
+    u = max(p_norms)
+
+    # Transform paragraph vectors
+    aug = np.sqrt(u**2 - p_norms**2)
+    aug = aug.reshape(-1, 1) # add dimension
+    all_p_vecs = np.hstack((all_p_vecs, aug))
+    # Transform pquestion vectors
+    aug = np.zeros((all_q_vecs.shape[0], 1))
+    all_q_vecs = np.hstack((all_q_vecs, aug))
+
+    # Save transformed vectors
+    output_dir = os.path.join(args.data_dir, args.src, "paragraph_vectors", args.domain, args.final_model_dir)
+    logger.info("Save vectors at {}".format(output_dir))
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    json.dump(qid2idx, open(os.path.join(output_dir, 'question_map.json'), 'w'), indent=4)
+    json.dump(pid2idx, open(os.path.join(output_dir, 'paragraph_map.json'), 'w'), indent=4)
+    np.save(os.path.join(output_dir, "question"), all_q_vecs)
+    np.save(os.path.join(output_dir, "paragraph"), all_p_vecs)
+
+def save_topk_result(args, sorted_result, corpus):
+    def get_answerKey(filepath):
+        ansKey = {}
+        with open(filepath) as infile:
+            for line in infile:
+                qa_json = json.loads(line)
+                ansKey[qa_json["id"]] = qa_json["answerKey"]
+        return ansKey
+
+    answerKey = get_answerKey('/home/yipeichen/ARC-Solvers/data/ARC-V1-Feb2018/ARC-Challenge/ARC-Challenge-Test.jsonl')
+
+    output_path = os.path.join(args.model_dir, f'top{args.num_topk_paras}_result.json')
+    logger.info(f"Save top{args.num_topk_paras} result at {output_path}")
+    with open(output_path, 'w') as outfile:
+        for qid, plist in tqdm(sorted_result.items()):
+            question_id = qid[:-2]
+            choice_label = qid[-1]
+            qtext = ' '.join(corpus.questions[qid].text)
+            choice_text = ' '.join(corpus.questions[qid].choice_text)
+
+            # Save the format as 'ARC-Challenge-Test_with_hits_default.jsonl'
+            for (score, pid) in plist[:args.num_topk_paras]:
+                ptext = ' '.join(corpus.paragraphs[pid].text)
+                output_dict = {
+                    "id": question_id,
+                    "question": {
+                        "stem": qtext,
+                        "choice": {
+                            "text": choice_text,
+                            "label": choice_label
+                        },
+                        "support": {
+                            "text": ptext,
+                            "emb_score": str(score)
+                        }
+                    },
+                    "answerKey": answerKey[question_id]
+                }
+                outfile.write(json.dumps(output_dict) + "\n")
+
 
 
 if __name__ == '__main__':
@@ -586,5 +755,13 @@ if __name__ == '__main__':
         logger.addHandler(logfile)
     logger.info('[ COMMAND: %s ]' % ' '.join(sys.argv))
 
+    # PRINT CONFIG
+    logger.info('-' * 100)
+    logger.info('CONFIG:\n%s' % json.dumps(vars(args), indent=4, sort_keys=True))
+
+
     # Run!
-    main(args)
+    if args.test_only:
+        test_mode(args)
+    else:
+        main(args)
