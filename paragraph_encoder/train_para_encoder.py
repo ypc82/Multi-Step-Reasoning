@@ -567,17 +567,24 @@ def test_mode(args):
     ret_model, optimizer, word_dict, feature_dict = init_from_checkpoint(args)
 
     logger.info("Making data loaders...")
-    ques_loader, para_loader = make_data_loader(args, all_test_exs)
+    if args.src == 'arc':
+        ques_loader, para_loader = make_data_loader(args, all_test_exs)
 
-    logger.info("Get top K test paragraph")
-    question_vectors, question_ids = eval_arc(args, ret_model, all_test_exs, ques_loader, 'ques')
-    paragraph_vectors, paragraph_ids = eval_arc(args, ret_model, all_test_exs, para_loader, 'para')
+        logger.info("Get top K test paragraph")
+        question_vectors, question_ids = eval_arc(args, ret_model, all_test_exs, ques_loader, 'ques')
+        paragraph_vectors, paragraph_ids = eval_arc(args, ret_model, all_test_exs, para_loader, 'para')
 
-    _, nn_ids = get_nearest(paragraph_vectors, question_vectors, k=args.num_topk_paras, use_gpu=False)
+        _, nn_ids = get_nearest(paragraph_vectors, question_vectors, k=args.num_topk_paras, use_gpu=False)
 
-    #save_transform_vectors(args, question_vectors, paragraph_vectors)
-    assert len(nn_ids) == len(question_ids)
-    save_topk_result(args, nn_ids, all_test_exs, question_ids, paragraph_ids)
+        #save_transform_vectors(args, question_vectors, paragraph_vectors)
+        assert len(nn_ids) == len(question_ids)
+        save_topk_result(args, nn_ids, all_test_exs, question_ids, paragraph_ids)
+
+    else:
+        test_loader = make_data_loader(args, all_test_exs)
+
+        logger.info("Get top K test paragraph")
+        eval_scitail(args, ret_model, all_test_exs, test_loader)
 
 
 def eval_scitail(args, ret_model, corpus, data_loader, save_scores=True):
