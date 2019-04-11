@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -x
 
-MEM=75GB
+MEM=50GB
 PARTITION=m40-long
 NGPUS=1
 
@@ -15,4 +15,4 @@ NGPUS=1
 
 # Evaluation
 srun --partition $PARTITION --gres=gpu:$NGPUS --mem=$MEM \
-python paragraph_encoder/train_para_encoder.py --test_only --pretrained saved_model/20190406-568de4e6/model.mdl --data_dir /mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data --model_dir saved_model --src arc --experiment_name question_answer --num_topk_paras 10 --test_file_name processed_test_1K --batch_size 512 --test_batch_size 512
+python paragraph_encoder/train_para_encoder.py --test_only --pretrained saved_model/20190406-28c79f03/model.mdl --data_dir /mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data --model_dir saved_model --src arc --experiment_name hypothesis --num_topk_paras 10 --test_file_name processed_test_1M --batch_size 512 --test_batch_size 512

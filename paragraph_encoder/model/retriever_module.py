@@ -95,6 +95,25 @@ class LSTMParagraphScorer(nn.Module):
 
         self.embedding.weight.data = embeddings
 
+    def encode_paragraph(self, x1, x1_mask):
+        x1_emb = self.embedding(x1)
+        if self.args.dropout_emb > 0 and not self.training:
+            x1_emb = nn.functional.dropout(x1_emb, p=self.args.dropout_emb, training=self.training)
+        o1 = self.document_lstm(x1_emb, x1_mask)
+        doc_attn = self.para_selfaatn(o1, x1_mask)
+        doc = weighted_avg(o1, doc_attn)
+        doc = self.bilinear(doc)
+        return doc
+
+    def encode_question(self, x2, x2_mask):
+        x2_emb = self.embedding(x2)
+        if self.args.dropout_emb > 0 and not self.training:
+            x2_emb = nn.functional.dropout(x2_emb, p=self.args.dropout_emb, training=self.training)
+        o2 = self.question_lstm(x2_emb, x2_mask)
+        ques_attn = self.query_selfaatn(o2, x2_mask)
+        ques = weighted_avg(o2, ques_attn)
+        return ques
+
     def forward(self, x1, x1_mask, x2, x2_mask):
 
         """

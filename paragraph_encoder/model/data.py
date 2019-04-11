@@ -158,61 +158,64 @@ class MultiCorpusDataset(Dataset):
         self.total_para_num = len(self.corpus.paragraphs)
 
     def __len__(self):
-        if self.args.src == 'arc':
-            return(len(self.corpus.questions) * len(self.corpus.paragraphs))
+        if self.para_mode:
+            return len(self.corpus.paragraphs)
         else:
-            if self.para_mode:
-                return len(self.corpus.paragraphs)
-            else:
-                return len(self.corpus.questions)
+            return len(self.corpus.questions)
 
     def __getitem__(self, index):
-        if self.args.src == 'arc':
+        if self.para_mode:
             ex = {}
-            pid = self.pid_list[index % self.total_para_num]
+            pid =  self.pid_list[index]
             para = self.corpus.paragraphs[pid]
             assert pid == para.pid
             ex['document'] = para.text
-
-            qid = self.qid_list[index // self.total_para_num]
-            question = self.corpus.questions[qid]
-            qtext = question.text
-            choice = question.choice_text
-            ex['question'] = qtext + choice
-            ex['ans_occurance'] = question.label
-            ex['id'] = qid
-            ex['pid'] = pid
+            ex['id'] = para.pid
+            ex['ans_occurance'] = para.ans_occurance
             
-            return vectorize(self.args, ex)
+            if self.args.src == 'scitail' and self.args.experiment_name == 'hypothesis':
+                ex['question'] = para.reform_qtext
 
-        else:
-            if self.para_mode:
-                ex = {}
-                pid =  self.pid_list[index]
-                para = self.corpus.paragraphs[pid]
-                assert pid == para.pid
-                ex['document'] = para.text
-                ex['id'] = para.pid
-                ex['ans_occurance'] = para.ans_occurance
-                
-                if self.args.src == 'scitail' and self.args.experiment_name == 'hypothesis':
-                    ex['question'] = para.reform_qtext
+            elif self.args.src == 'scitail' and self.args.experiment_name == 'question_answer':
+                qid = para.qid
+                question = self.corpus.questions[qid]
+                ex['question'] = question.text + para.ans
 
-                elif self.args.src == 'scitail' and self.args.experiment_name == 'question_answer':
-                    qid = para.qid
-                    question = self.corpus.questions[qid]
-                    ex['question'] = question.text + para.ans
-
-                else:
-                    qid = para.qid
-                    question = self.corpus.questions[qid]
-                    ex['question'] = question.text
-                    assert pid in question.pids
-
-                return vectorize(self.args, ex)
             else:
-                raise NotImplementedError("later")
+                qid = para.qid
+                question = self.corpus.questions[qid]
+                ex['question'] = question.text
+                assert pid in question.pids
 
+            return vectorize(self.args, ex)
+        else:
+            raise NotImplementedError("later")
+
+class ArcDataset(Dataset):
+    def __init__(self, args, data_dic, data_type):
+        self.args = args
+        self.data_dic = data_dic
+        self.data_type = data_type
+        self.word_dict = args.word_dict
+        self.data_list = list(data_dic.keys())
+
+    def __len__(self):
+        return len(self.data_dic)
+
+    def __getitem__(self, index):
+        ex_id =  self.data_list[index]
+        if self.data_type == 'para':
+            para = self.data_dic[ex_id]
+            words = para.text
+
+        elif self.data_type == 'ques':
+            qtext = self.data_dic[ex_id].text
+            choice = self.data_dic[ex_id].choice_text
+            words = qtext + choice
+
+        words = [self.word_dict[w] for w in words]
+
+        return words, ex_id
 
 # ------------------------------------------------------------------------------
 # PyTorch sampler returning batched of sorted lengths (by doc and question).

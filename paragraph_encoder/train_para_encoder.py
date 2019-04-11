@@ -7,6 +7,8 @@ import shutil
 import math
 import numpy as np
 from tqdm import tqdm
+import time
+import faiss
 
 import torch
 from torch.autograd import Variable
@@ -28,26 +30,51 @@ stats = {'timer': global_timer, 'epoch': 0, 'best_valid': 0, 'best_verified_vali
 
 def make_data_loader(args, corpus, train_time=False):
 
-    dataset = data.MultiCorpusDataset(
-        args,
-        corpus,
-        args.word_dict,
-        args.feature_dict,
-        single_answer=False,
-        para_mode=args.para_mode,
-        train_time=train_time
-    )
-    sampler = SequentialSampler(dataset) if not train_time else RandomSampler(dataset)
-    loader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=args.batch_size,
-        sampler=sampler,
-        num_workers=args.data_workers,
-        collate_fn=vector.batchify(args, args.para_mode, train_time=train_time),
-        pin_memory=True
-    )
+    if args.src == 'arc':
+        ques_dataset = data.ArcDataset(args, corpus.questions, 'ques')
+        
+        ques_loader = torch.utils.data.DataLoader(
+            ques_dataset,
+            batch_size=args.batch_size,
+            num_workers=args.data_workers,
+            collate_fn=vector.batchify_arc,
+            pin_memory=True
+        )
+        para_dataset = data.ArcDataset(
+            args,
+            corpus.paragraphs,
+            'para'
+        )
+        para_loader = torch.utils.data.DataLoader(
+            para_dataset,
+            batch_size=args.batch_size,
+            num_workers=args.data_workers,
+            collate_fn=vector.batchify_arc,
+            pin_memory=True
+        )
+        return ques_loader, para_loader
 
-    return loader
+    else:
+        dataset = data.MultiCorpusDataset(
+            args,
+            corpus,
+            args.word_dict,
+            args.feature_dict,
+            single_answer=False,
+            para_mode=args.para_mode,
+            train_time=train_time
+        )
+        sampler = SequentialSampler(dataset) if not train_time else RandomSampler(dataset)
+        loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=args.batch_size,
+            sampler=sampler,
+            num_workers=args.data_workers,
+            collate_fn=vector.batchify(args, args.para_mode, train_time=train_time),
+            pin_memory=True
+        )
+
+        return loader
 
 
 
@@ -540,16 +567,17 @@ def test_mode(args):
     ret_model, optimizer, word_dict, feature_dict = init_from_checkpoint(args)
 
     logger.info("Making data loaders...")
-    test_loader = make_data_loader(args, all_test_exs)
+    ques_loader, para_loader = make_data_loader(args, all_test_exs)
 
     logger.info("Get top K test paragraph")
-    #eval_scitail(args, ret_model, all_test_exs, test_loader)
-    result, question_vectors, paragraph_vectors = eval_arc(args, ret_model, all_test_exs, test_loader)
-    sorted_result = sort_result(result)
+    question_vectors, question_ids = eval_arc(args, ret_model, all_test_exs, ques_loader, 'ques')
+    paragraph_vectors, paragraph_ids = eval_arc(args, ret_model, all_test_exs, para_loader, 'para')
 
+    _, nn_ids = get_nearest(paragraph_vectors, question_vectors, k=args.num_topk_paras, use_gpu=False)
 
-    save_transform_vectors(args, question_vectors, paragraph_vectors)
-    save_topk_result(args, sorted_result, all_test_exs)
+    #save_transform_vectors(args, question_vectors, paragraph_vectors)
+    assert len(nn_ids) == len(question_ids)
+    save_topk_result(args, nn_ids, all_test_exs, question_ids, paragraph_ids)
 
 
 def eval_scitail(args, ret_model, corpus, data_loader, save_scores=True):
@@ -586,52 +614,32 @@ def eval_scitail(args, ret_model, corpus, data_loader, save_scores=True):
     get_topk(corpus)
     #print_vectors(args, para_vectors, question_vectors, corpus, train, test)
 
-def eval_arc(args, ret_model, corpus, data_loader):
-    """ Return result_dic, question_vectors, paragraph_vectors
-    # result_dic: 
-        { 'qid0': [(score_p0, pid0), (score_p1, pid1), ..., (score_pn, pidn)],
-          'qid1': [(score_p0, pid0), (score_p1, pid1), ..., (score_pn, pidn)],
-          ...,
-          'qidm': [(score_p0, pid0), (score_p1, pid1), ..., (score_pn, pidn)],
-        }
-    """
-    total_exs = 0
-    args.train_time = False
+def eval_arc(args, ret_model, corpus, data_loader, data_type=None):
     ret_model.model.eval()
-
-    result_dic = {}
-    question_vectors = {}
-    paragraph_vectors = {}
-
+    output_vectors = []
+    output_ids = []
     for idx, ex in enumerate(tqdm(data_loader)):
-        # ex: x1, x1_mask, x2, x2_mask, num_occurances, ids, pids
-        # ex.shape: 7 x batch_size
-
+        # ex=(x1, x1_mask, ids)
         if ex is None:
             raise BrokenPipeError
 
+        word, mask, ids = ex
+        output_ids.extend(ids)
+        if args.cuda:
+            word = word.cuda()
+            mask = mask.cuda()
+        try:
+            with torch.no_grad():
+                if data_type == 'para':
+                    vectors = ret_model.model.encode_paragraph(word, mask)
+                elif data_type == 'ques':
+                    vectors = ret_model.model.encode_question(word, mask)
+                vectors = vectors.cpu().numpy()
+        except ValueError:
+            import ipdb; ipdb.set_trace()
+        output_vectors.extend(vectors)
 
-        inputs = [e if e is None or type(e) != type(ex[0]) else Variable(e.cuda(async=True))
-                  for e in ex[:]]
-        ret_input = [*inputs[:4]]
-        total_exs += ex[0].size(0)
-
-        scores, doc, ques = ret_model.score_paras(*ret_input)
-        scores = scores.cpu().data.numpy()
-        scores = scores.reshape((-1))
-        
-        for i in range(len(scores)):
-            qid = ex[5][i]
-            pid = ex[6][i]
-            score = scores[i]
-            result_dic.setdefault(qid, []).append((score, pid))
-            
-            if qid not in question_vectors:
-                question_vectors[qid] = ques[i]
-            if pid not in paragraph_vectors:
-                paragraph_vectors[pid] = doc[i]
-    
-    return result_dic, question_vectors, paragraph_vectors
+    return output_vectors, output_ids
 
 def sort_result(result):
     sorted_result = {}
@@ -681,7 +689,42 @@ def save_transform_vectors(args, q_vectors, p_vectors):
     np.save(os.path.join(output_dir, "question"), all_q_vecs)
     np.save(os.path.join(output_dir, "paragraph"), all_p_vecs)
 
-def save_topk_result(args, sorted_result, corpus):
+def get_nearest(para_enc, ques_enc, k=10, use_gpu=False):
+    logger.info("[FNN]")
+    para_enc = np.array(para_enc)
+    ques_enc = np.array(ques_enc)
+    sentences, dims = para_enc.shape
+
+    if use_gpu:
+        gpu_resource = faiss.StandardGpuResources()  # use a single GPU
+    nlist = min(sentences, 100)  # this is number of partitions in data,
+    # think of as centroids in K-means clustering
+    quantizer = faiss.IndexFlatL2(dims)
+    index = faiss.IndexIVFFlat(quantizer, dims, nlist, faiss.METRIC_L2)
+    if use_gpu:
+        index = faiss.index_cpu_to_gpu(gpu_resource, 0, index)
+    assert not index.is_trained
+    logger.info("[FNN] Started training...")
+    start = time.time()
+    index.train(para_enc)
+    logger.info(f"[FNN] Completed Training.\n Time taken to train : {time.time() - start}")
+    assert index.is_trained
+
+    logger.info("[FNN] Starting to add paras...")
+    start = time.time()
+    index.add(para_enc)
+    logger.info(f"[FNN] Completed Adding.\n Time taken to add : {time.time() - start}")
+
+    index.nprobe = 10  # this is number of lists (in nlists) searched for
+    # nearest neighbors. Note: nprobe == nlist will be same as brute-force
+
+    logger.info(f"[FNN] Starting search nearest neighbors...")
+    start = time.time()
+    dist, index = index.search(ques_enc, k)
+    logger.info(f"[FNN] Completed Search.\n Time taken to search : {time.time() - start}")
+    return dist, index
+
+def save_topk_result(args, nn_ids, corpus, question_ids, paragraph_ids):
     def get_answerKey(filepath):
         ansKey = {}
         with open(filepath) as infile:
@@ -692,17 +735,18 @@ def save_topk_result(args, sorted_result, corpus):
 
     answerKey = get_answerKey('/home/yipeichen/ARC-Solvers/data/ARC-V1-Feb2018/ARC-Challenge/ARC-Challenge-Test.jsonl')
 
-    output_path = os.path.join(args.model_dir, f'top{args.num_topk_paras}_result.json')
+    output_path = os.path.join(args.model_dir, f'top{args.num_topk_paras}_result.jsonl')
     logger.info(f"Save top{args.num_topk_paras} result at {output_path}")
     with open(output_path, 'w') as outfile:
-        for qid, plist in tqdm(sorted_result.items()):
+        for i, qid in enumerate(question_ids):
             question_id = qid[:-2]
             choice_label = qid[-1]
             qtext = ' '.join(corpus.questions[qid].text)
             choice_text = ' '.join(corpus.questions[qid].choice_text)
 
             # Save the format as 'ARC-Challenge-Test_with_hits_default.jsonl'
-            for (score, pid) in plist[:args.num_topk_paras]:
+            for idx in nn_ids[i]:
+                pid = paragraph_ids[idx]
                 ptext = ' '.join(corpus.paragraphs[pid].text)
                 output_dict = {
                     "id": question_id,
@@ -713,8 +757,7 @@ def save_topk_result(args, sorted_result, corpus):
                             "label": choice_label
                         },
                         "support": {
-                            "text": ptext,
-                            "emb_score": str(score)
+                            "text": ptext
                         }
                     },
                     "answerKey": answerKey[question_id]

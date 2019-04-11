@@ -34,7 +34,6 @@ def vectorize(args, ex):
                 return
     return document, question, ex['ans_occurance'], ex['id'], ex['pid']
 
-
 def batchify(args, para_mode, train_time):
     return lambda x: batchify_(args, x, para_mode, train_time)
 
@@ -49,17 +48,10 @@ def batchify_(args, batch, para_mode, train_time):
     batch = new_batch
     if len(batch) == 0:
         return None
-    if args.src == 'arc':
-        docs = [ex[0] for ex in batch]
-        questions = [ex[1] for ex in batch]
-        num_occurances = [ex[2] for ex in batch]
-        ids = [ex[3] for ex in batch]
-        pids = [ex[4] for ex in batch]
-    else:
-        ids = [ex[-1] for ex in batch]
-        docs = [ex[0] for ex in batch]
-        questions = [ex[1] for ex in batch]
-        num_occurances = [ex[-2] for ex in batch]
+    ids = [ex[-1] for ex in batch]
+    docs = [ex[0] for ex in batch]
+    questions = [ex[1] for ex in batch]
+    num_occurances = [ex[-2] for ex in batch]
     num_occurances = torch.LongTensor(num_occurances)
     # Batch documents and features
     max_length = max([d.size(0) for d in docs])
@@ -79,3 +71,26 @@ def batchify_(args, batch, para_mode, train_time):
         x2_mask[i, :q.size(0)].fill_(0)
 
     return x1, x1_mask, x2, x2_mask, num_occurances, ids, pids
+
+def batchify_arc(batch):
+    """Gather a batch of individual examples into one batch."""
+
+    new_batch = []
+    for d in batch:
+        if d is not None:
+            new_batch.append(d)
+    batch = new_batch
+    if len(batch) == 0:
+        return None
+    docs = [torch.LongTensor(ex[0]) for ex in batch]
+    ids = [ex[1] for ex in batch]
+    # Batch documents and features
+    max_length = max([len(d) for d in docs])
+    x1 = torch.LongTensor(len(docs), max_length).zero_()
+    x1_mask = torch.ByteTensor(len(docs), max_length).fill_(1)
+
+    for i, d in enumerate(docs):
+        x1[i, :len(d)].copy_(d)
+        x1_mask[i, :len(d)].fill_(0)
+
+    return x1, x1_mask, ids
