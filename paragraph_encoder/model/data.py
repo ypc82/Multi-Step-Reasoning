@@ -20,8 +20,14 @@ from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler
 from .vector import vectorize
 
+import arc_random_sampler
+from arc_random_sampler import EsSearch
+
 logger = logging.getLogger()
 
+tracer = logging.getLogger('elasticsearch')
+tracer.setLevel(logging.CRITICAL) # or desired level
+tracer.addHandler(logging.FileHandler('indexer.log'))
 
 # ------------------------------------------------------------------------------
 # Dictionary class for tokens.
@@ -156,40 +162,107 @@ class MultiCorpusDataset(Dataset):
         self.pid_list = list(self.corpus.paragraphs.keys())
         self.qid_list = list(self.corpus.questions.keys())
         self.total_para_num = len(self.corpus.paragraphs)
+        if self.train_time and self.args.augment_train:
+            # TODO: set client=node008
+            es_search = EsSearch(es_client="node008", random_seed=self.args.random_seed)
+            self.add_para_list = self.sample_negative_ex(es_search)
+            logger.info(f'Add {len(self.add_para_list)} negative samples from {self.args.augment_dataset}')
 
     def __len__(self):
         if self.para_mode:
+            if self.train_time and self.args.augment_train:
+                return len(self.corpus.paragraphs) + len(self.add_para_list)
             return len(self.corpus.paragraphs)
         else:
             return len(self.corpus.questions)
 
     def __getitem__(self, index):
         if self.para_mode:
-            ex = {}
-            pid =  self.pid_list[index]
-            para = self.corpus.paragraphs[pid]
-            assert pid == para.pid
-            ex['document'] = para.text
-            ex['id'] = para.pid
-            ex['ans_occurance'] = para.ans_occurance
-            
-            if self.args.src == 'scitail' and self.args.experiment_name == 'hypothesis':
-                ex['question'] = para.reform_qtext
-
-            elif self.args.src == 'scitail' and self.args.experiment_name == 'question_answer':
-                qid = para.qid
-                question = self.corpus.questions[qid]
-                ex['question'] = question.text + para.ans
-
+            if index < len(self.pid_list):
+                ex = self.get_ex(index)
+                return vectorize(self.args, ex)
             else:
-                qid = para.qid
-                question = self.corpus.questions[qid]
-                ex['question'] = question.text
-                assert pid in question.pids
+                ex = self.get_additional_ex(index)
+                return vectorize(self.args, ex)
 
-            return vectorize(self.args, ex)
         else:
             raise NotImplementedError("later")
+
+    def get_ex(self, index):
+        ex = {}
+        pid =  self.pid_list[index]
+        para = self.corpus.paragraphs[pid]
+        assert pid == para.pid
+        ex['document'] = para.text
+        ex['id'] = para.pid
+        ex['ans_occurance'] = para.ans_occurance
+        
+        if self.args.src == 'scitail' and self.args.experiment_name == 'hypothesis':
+            ex['question'] = para.reform_qtext
+
+        elif self.args.src == 'scitail' and self.args.experiment_name == 'question_answer':
+            qid = para.qid
+            question = self.corpus.questions[qid]
+            ex['question'] = question.text + para.ans
+
+        else:
+            qid = para.qid
+            question = self.corpus.questions[qid]
+            ex['question'] = question.text
+            assert pid in question.pids
+
+        return ex
+
+    def get_additional_ex(self, index):
+        ex = {}
+        idx = index-len(self.pid_list)
+        para_dic =  self.add_para_list[idx]
+
+        ex['ans_occurance'] = 0
+        ex['document'] = para_dic["paragraph"]
+        ex['id'] = f'add_{para_dic["qid"]}_{str(idx)}'
+        ex['question'] = para_dic["question"]
+
+        # TODO: args.augment_dataset == 'scitail'
+
+        return ex
+
+    def sample_negative_ex(self, es_search):
+        # add_para_list is a list of dictionaries, each of which contains keys:
+        # "paragraph", "question", "qid" 
+        para_list = []
+        
+        # Get 20K Elastic Search result at a time
+        es_result = []
+        while len(es_result) < 20000:
+            es_result.extend(es_search.get_hits(max_hits_retrieved=10000, max_filtered_hits=10000,
+                                     max_hit_length=self.args.max_hit_len, min_hit_length=self.args.min_hit_len))
+        print(f'ES result: {len(es_result)}')
+
+        for idx, qid in enumerate(self.qid_list):
+            q_obj = self.corpus.questions[qid]
+
+            # obtain origin pos:neg
+            neg = 0
+            pids = q_obj.pids
+            for pid in pids:
+                if self.corpus.paragraphs[pid].ans_occurance == 0:
+                    neg += 1
+            pos = len(pids) - neg
+
+            add_counter = 0
+            try:
+                while neg/pos < self.args.neg_sample_rate:
+                    ex_dic = {}
+                    ex_dic["qid"] = qid
+                    ex_dic["question"] = q_obj.text
+                    ex_dic["paragraph"] = es_result[len(para_list)].text
+                    para_list.append(ex_dic)
+                    neg += 1
+            except:
+                print(f'[{idx}] neg/pos: {neg/pos:.3f} ({neg}/{pos}); add_counter: {len(para_list)}/{len(es_result)}')
+        return para_list
+
 
 class ArcDataset(Dataset):
     def __init__(self, args, data_dic, data_type):

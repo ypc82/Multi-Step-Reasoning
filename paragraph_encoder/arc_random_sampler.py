@@ -22,7 +22,7 @@ class EsHit:
 
 class EsSearch:
     @staticmethod
-    def construct_qa_query(max_hits_retrieved):
+    def construct_qa_query(max_hits_retrieved, random_seed=1234):
         return {"from": 0, "size": max_hits_retrieved,
                 "query": {
                     "function_score": {
@@ -31,7 +31,7 @@ class EsSearch:
                         },
                         "random_score": {
                             # set a seed to get same random text
-                            "seed": 0
+                            "seed": random_seed
                         }
                     }
                 }}
@@ -41,7 +41,8 @@ class EsSearch:
     # requires that the
     def __init__(self,
                  es_client: str = "localhost",
-                 indices: str = "arc_corpus"):
+                 indices: str = "arc_corpus",
+                 random_seed: int = 1234):
         """
         Class to search over the text corpus using ElasticSearch
         :param es_client: Location of the ElasticSearch service
@@ -49,6 +50,7 @@ class EsSearch:
         """
         self._es = Elasticsearch([es_client], retries=3)
         self._indices = indices
+        self.random_seed = random_seed
         # Regex for negation words used to ignore Lucene results with negation
         self._negation_regexes = [re.compile(r) for r in
                                   ["not\\s", "n't\\s", "except\\s"]]
@@ -63,7 +65,7 @@ class EsSearch:
                  min_hit_length: int = 10):
         res = self._es.search(
             index=self._indices,
-            body=self.construct_qa_query(max_hits_retrieved)
+            body=self.construct_qa_query(max_hits_retrieved, self.random_seed)
         )
         hits = []
         for idx, es_hit in enumerate(res['hits']['hits']):

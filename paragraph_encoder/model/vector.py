@@ -32,7 +32,7 @@ def vectorize(args, ex):
         if ex['ans_occurance'] == 0:
             if np.random.binomial(1, args.neg_sample) == 0:
                 return
-    return document, question, ex['ans_occurance'], ex['id'], ex['pid']
+    return document, question, ex['ans_occurance'], ex['id']
 
 def batchify(args, para_mode, train_time):
     return lambda x: batchify_(args, x, para_mode, train_time)
@@ -70,7 +70,7 @@ def batchify_(args, batch, para_mode, train_time):
         x2[i, :q.size(0)].copy_(q)
         x2_mask[i, :q.size(0)].fill_(0)
 
-    return x1, x1_mask, x2, x2_mask, num_occurances, ids, pids
+    return x1, x1_mask, x2, x2_mask, num_occurances, ids
 
 def batchify_arc(batch):
     """Gather a batch of individual examples into one batch."""

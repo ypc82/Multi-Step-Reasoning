@@ -27,6 +27,7 @@ def get_args():
     parser.add_argument('--test_time_cuda', type='bool', default=True)
     parser.add_argument('--gpu', type=int, default=-1)
     parser.add_argument('--data_workers', type=int, default=5)
+
     # Basics
     parser.add_argument('--experiment_name', type=str, default=None)
     parser.add_argument('--model_dir', type=str)
@@ -71,6 +72,14 @@ def get_args():
     parser.add_argument('--train_file_name', type=str, default='processed_train')
     parser.add_argument('--dev_file_name', type=str, default='processed_dev')
     parser.add_argument('--test_file_name', type=str, default='processed_test')
+
+    parser.add_argument('--augment_train', action='store_true')
+    parser.add_argument('--augment_dataset', default='arc', choices=('scitail', 'arc'))
+    parser.add_argument('--sample_num', type=int, default=10, help='additional negative samples for each question')
+    parser.add_argument('--neg_sample_rate', type=int, default=3, 
+                        help='additional negative sample for each question, 3 means neg samples are 3 times of pos samples')
+    parser.add_argument('--min_hit_len', type=int, default=5, help='ES min_hit_length')
+    parser.add_argument('--max_hit_len', type=int, default=30, help='ES max_hit_length')
 
     parser.add_argument('--embedding_file', type=str, default='crawl-300d-2M.txt')
     parser.add_argument('--embedding_table', type=str, default='embedding_table.mdl')

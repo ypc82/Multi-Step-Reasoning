@@ -19,10 +19,11 @@ def tokenize(sentence):
 
 
 class ARCReader():
-    def __init__(self, args, qa_path, corpus_path):
+    def __init__(self, args, data_path, min_len=0, max_len=100000):
         self.args = args
-        self.qa_path = qa_path
-        self.arcCorpus_path = corpus_path
+        self.data_path = data_path
+        self.min_len = min_len
+        self.max_len = max_len
 
     def read_qafile(self):
         qid, question, choices, answerKey = [], [], [], []
@@ -39,27 +40,40 @@ class ARCReader():
                 
 
     def read_corpus(self):
-        logger.info(f"Load {self.arcCorpus_path}")
-        with open(self.arcCorpus_path) as infile:
+        logger.info(f"Load {self.data_path}")
+        with open(self.data_path) as infile:
             arc_corpus = [line.strip() for line in infile if len(line.strip()) > 0]
         logger.info(f'len(arc_corpus)={len(arc_corpus)}')
 
         sentences = []
+        import ipdb;ipdb.set_trace()
+        logger.info(f"Tokenize corpus")
         for doc in tqdm(nlp.pipe(arc_corpus, batch_size=10000, n_threads=32), total=len(arc_corpus)):
+            if len(doc) < self.min_len or len(doc) > self.max_len:
+                continue
             sentences.append([token.text for token in doc])
 
         return sentences
 
-    def run(self):
+    def run_corpus(self):
+        corpus = MultiCorpus(self.args)
+        arc_corpus = self.read_corpus()
+
+        logger.info('Add corpus.paragraphs')
+        for i in tqdm(range(len(arc_corpus))):
+            pid = 'p' + str(i)
+            corpus.paragraphs[pid] = corpus.Paragraph(self.args, pid, arc_corpus[i])
+        return corpus
+
+    def run_question(self):
+        corpus = MultiCorpus(self.args)
+        
         qid, question, choices, answerKey = self.read_qafile()
         logger.info(f'Number of questions={len(qid)}')
         logger.info('Tokenize question')
         tokened_question = []
         for doc in nlp.pipe(question, batch_size=100, n_threads=32):
             tokened_question.append([token.text for token in doc])
-
-
-        corpus = MultiCorpus(self.args)
 
         logger.info('Add corpus.questions')
         #import gnureadline
@@ -72,13 +86,6 @@ class ARCReader():
                 corpus.questions[cqid] = corpus.Question(self.args, cqid, qtext, 
                                                          choice_text=tokenize(choice['text']),
                                                          label=label)
-
-        arc_corpus = self.read_corpus()
-
-        logger.info('Add corpus.paragraphs')
-        for i in tqdm(range(len(arc_corpus))):
-            pid = 'p' + str(i)
-            corpus.paragraphs[pid] = corpus.Paragraph(self.args, pid, arc_corpus[i])
 
         return corpus
 
@@ -174,11 +181,18 @@ def read(dataset, args, data_type='train'):
 
     elif dataset == 'arc_corpus':
         arc_dir = '/home/yipeichen/ARC-Solvers/data/ARC-V1-Feb2018'
-        qa_path = os.path.join(arc_dir, f'ARC-Challenge/ARC-Challenge-{data_type}.jsonl')
         corpus_path = os.path.join(arc_dir, 'ARC_Corpus_1K.txt')
+        output_path = os.path.join(data_dir, 'arc/data/web-open/arc_corpus_clean.pkl')
+
+        reader = ARCReader(args, corpus_path, min_len=5, max_len=100)
+        corpus = reader.run_corpus()
+
+    elif dataset == 'arc':
+        qa_path = os.path.join(arc_dir, f'ARC-Challenge/ARC-Challenge-{data_type}.jsonl')
         output_path = os.path.join(data_dir, 'arc/data/web-open/processed_test_1K.pkl')
 
-        reader = ARCReader(args, qa_path, corpus_path)
+        reader = ARCReader(args, qa_path)
+        corpus = reader.run_question()
 
     elif dataset == 'scitail':
         scitail_dir = '/mnt/nfs/work1/mccallum/yipeichen/data/SciTailV1.1/predictor_format'
@@ -190,12 +204,11 @@ def read(dataset, args, data_type='train'):
         output_path = os.path.join(data_dir, dataset, 'data/web-open', f'processed_{data_type}.pkl')
 
         reader = ScitailReader(args, data_path, qid2text_path, pid2text_path)
+        corpus = reader.run()
 
-    corpus = reader.run()
-
-    logger.info(f'Save to {output_path}')
-    with open(output_path, 'wb') as outfile:
-        pickle.dump(corpus, outfile)
+#    logger.info(f'Save to {output_path}')
+#    with open(output_path, 'wb') as outfile:
+#        pickle.dump(corpus, outfile)
 
 
 if __name__ == "__main__":
@@ -217,5 +230,6 @@ if __name__ == "__main__":
     #read('scitail', options, 'dev')
     #read('scitail', options, 'test')
 
-    read('arc_corpus', options, 'Test')
+    read('arc_corpus', options)
+    #read('arc', options, 'Test')
 
