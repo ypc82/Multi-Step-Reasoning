@@ -164,7 +164,7 @@ class MultiCorpusDataset(Dataset):
         self.total_para_num = len(self.corpus.paragraphs)
         if self.train_time and self.args.augment_train:
             # TODO: set client=node008
-            es_search = EsSearch(es_client="node008", random_seed=self.args.random_seed)
+            es_search = EsSearch(es_client="node008")
             self.add_para_list = self.sample_negative_ex(es_search)
             logger.info(f'Add {len(self.add_para_list)} negative samples from {self.args.augment_dataset}')
 
@@ -236,7 +236,8 @@ class MultiCorpusDataset(Dataset):
         es_result = []
         while len(es_result) < 20000:
             es_result.extend(es_search.get_hits(max_hits_retrieved=10000, max_filtered_hits=10000,
-                                     max_hit_length=self.args.max_hit_len, min_hit_length=self.args.min_hit_len))
+                                     max_hit_length=self.args.max_hit_len, min_hit_length=self.args.min_hit_len,
+                                     random_seed=len(es_result)))
         print(f'ES result: {len(es_result)}')
 
         for idx, qid in enumerate(self.qid_list):
