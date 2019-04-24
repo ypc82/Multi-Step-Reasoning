@@ -12,7 +12,8 @@ class MultiCorpus:
     class Paragraph:
         def __init__(self, args, pid, text, qid=None, 
                      answer_span=None, ans_occurance=None, 
-                     tfidf=None, ans=None, reform_qtext=None):
+                     tfidf=None, ans=None, reform_qtext=None,
+                     category=None):
             """
             :param args:
             :param pid:
@@ -33,10 +34,11 @@ class MultiCorpus:
             # Customize
             self.ans = ans
             self.reform_qtext = reform_qtext
+            self.category = category
             
 
     class Question:
-        def __init__(self, args, qid, text, pids=None, choice_text=None, reform_qtext=None, label=None):
+        def __init__(self, args, qid, text, pids=None, choice_text=None, reform_qtext=None, label=None, category=None):
             self.args = args # Namespace(calculate_tfidf=True, small=False)
             self.qid = qid # '140951'
             self.text = text # ['ft', 'sill', ',', 'okla', 'made', 'plea', ',', 'arizona', 'land', ',', 'home', ',', 'father', "'s", 'land', ',', 'ask', 'return']
@@ -46,6 +48,7 @@ class MultiCorpus:
             self.choice_text = choice_text
             self.reform_qtext = reform_qtext 
             self.label = label
+            self.category = category
 
     def __init__(self, args):
 
