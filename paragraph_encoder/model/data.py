@@ -162,7 +162,8 @@ class MultiCorpusDataset(Dataset):
         self.pid_list = list(self.corpus.paragraphs.keys())
         self.qid_list = list(self.corpus.questions.keys())
         self.total_para_num = len(self.corpus.paragraphs)
-        if self.train_time and self.args.augment_train:
+        #if self.train_time and self.args.augment_train:
+        if self.args.augment_train:
             # TODO: set client=node008
             es_search = EsSearch(es_client="node008")
             self.add_para_list = self.sample_negative_ex(es_search)
@@ -170,7 +171,8 @@ class MultiCorpusDataset(Dataset):
 
     def __len__(self):
         if self.para_mode:
-            if self.train_time and self.args.augment_train:
+            #if self.train_time and self.args.augment_train:
+            if self.args.augment_train:
                 return len(self.corpus.paragraphs) + len(self.add_para_list)
             return len(self.corpus.paragraphs)
         else:

@@ -247,6 +247,11 @@ def read(dataset, args, data_type='train'):
         reader = ScitailReader(args, data_path, qid2text_path, pid2text_path)
         corpus = reader.run()
 
+        logger.info(f'Save to {output_path}')
+        with open(output_path, 'wb') as outfile:
+            pickle.dump(corpus, outfile)
+    
+
     elif dataset == 'scitail_new':
         ''' Create new data split of scitail (0.9, 0.1, 0.1 for train, dev, test, respectively.)
         '''

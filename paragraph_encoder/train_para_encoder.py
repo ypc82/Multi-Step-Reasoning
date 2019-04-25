@@ -308,6 +308,7 @@ def get_topk(corpus):
     top1 = 0
     top3 = 0
     top5 = 0
+    top50 = 0
     for qid in corpus.questions:
 
         para_scores = [(corpus.paragraphs[pid].model_score,corpus.paragraphs[pid].ans_occurance ) for pid in corpus.questions[qid].pids]
@@ -319,12 +320,15 @@ def get_topk(corpus):
             top3 += 1
         if sum([ans[1] for ans in sorted_para_scores[:5]]) > 0:
             top5 += 1
+        if sum([ans[1] for ans in sorted_para_scores[:50]]) > 0:
+            top50 += 1
 
     top1 = top1/len(corpus.questions)
     top3 = top3/len(corpus.questions)
     top5 = top5/len(corpus.questions)
+    top50 = top50/len(corpus.questions)
 
-    logger.info('top1 = {}, top3 = {}, top5 = {} '.format(top1, top3 ,top5 ))
+    logger.info('top1 = {}, top3 = {}, top5 = {} top50 = {}'.format(top1, top3 ,top5, top50 ))
     return top1
 
 def get_topk_tfidf(corpus):
@@ -550,6 +554,7 @@ def main(args):
             save(args, ret_model.model, optimizer, args.model_file+".ckpt", epoch=stats['epoch'])
 
             logger.info("Evaluating on the full dev set....")
+            _ = eval_binary_classification(args, ret_model, all_train_exs, train_loader, verified_dev_loader=None)
             top1 = eval_binary_classification(args, ret_model, all_dev_exs, dev_loader, verified_dev_loader=None)
             if stats['best_acc'] < top1:
                 stats['best_acc'] = top1
