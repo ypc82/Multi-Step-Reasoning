@@ -12,9 +12,9 @@ set -x
 
 # Train
 #srun --partition $PARTITION --gres=gpu:$NGPUS --mem=$MEM \
-python paragraph_encoder/train_para_encoder.py --data_dir /mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data --src scitail --model_dir saved_model --experiment_name question_answer --train_file_name train_new --dev_file_name dev_new --num_epochs 1000
+#python paragraph_encoder/train_para_encoder.py --data_dir /mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data --src scitail --model_dir saved_model --experiment_name question_answer --train_file_name processed_train_no_neg --dev_file_name processed_dev_no_neg --num_epochs 100 --augment_train --min_hit_len 5 --max_hit_len 50 --neg_sample_rate 5
 #python paragraph_encoder/train_para_encoder.py --data_dir /mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data --src scitail --model_dir saved_model --experiment_name question_answer --augment_train --min_hit_len 5 --max_hit_len 50 --neg_sample_rate 3 --num_epochs 100
 
 # Evaluation
-#python paragraph_encoder/train_para_encoder.py --test_only --pretrained saved_model/20190406-28c79f03/model.mdl --data_dir /mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data --model_dir saved_model --src arc --experiment_name hypothesis --num_topk_paras 10 --test_file_name processed_test_1M --batch_size 512 --test_batch_size 512
-#python paragraph_encoder/train_para_encoder.py --test_only --pretrained saved_model/20190424-a5711bf0/model.mdl --data_dir /mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data --model_dir saved_model --src scitail --experiment_name question_answer --test_file_name test_new
+#python paragraph_encoder/train_para_encoder.py --test_only --pretrained saved_model/20190426-190aa163/model.mdl --data_dir /mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data --model_dir saved_model --src arc --experiment_name question_answer --num_topk_paras 10 --test_file_name processed_test --batch_size 512 --test_batch_size 512
+python paragraph_encoder/train_para_encoder.py --test_only --pretrained saved_model/20190426-190aa163/model.mdl --data_dir /mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data --model_dir saved_model --src scitail --experiment_name question_answer --test_file_name processed_test

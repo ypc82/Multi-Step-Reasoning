@@ -31,7 +31,11 @@ stats = {'timer': global_timer, 'epoch': 0, 'best_valid': 0, 'best_verified_vali
 def make_data_loader(args, corpus, train_time=False):
 
     if args.src == 'arc':
-        ques_dataset = data.ArcDataset(args, corpus.questions, 'ques')
+        ques_dataset = data.ArcDataset(
+            args, 
+            corpus.questions,
+            'ques'
+        )
         
         ques_loader = torch.utils.data.DataLoader(
             ques_dataset,
@@ -554,30 +558,32 @@ def main(args):
             save(args, ret_model.model, optimizer, args.model_file+".ckpt", epoch=stats['epoch'])
 
             logger.info("Evaluating on the full dev set....")
-            _ = eval_binary_classification(args, ret_model, all_train_exs, train_loader, verified_dev_loader=None)
-            top1 = eval_binary_classification(args, ret_model, all_dev_exs, dev_loader, verified_dev_loader=None)
-            if stats['best_acc'] < top1:
-                stats['best_acc'] = top1
-                logger.info('Best accuracy {}'.format(stats['best_acc']))
-                logger.info('Saving model at {}'.format(args.model_file))
-                logger.info("Logs saved at {}".format(args.log_file))
+            #_ = eval_binary_classification(args, ret_model, all_train_exs, train_loader, verified_dev_loader=None)
+            #top1 = eval_binary_classification(args, ret_model, all_dev_exs, dev_loader, verified_dev_loader=None)
+            #if stats['best_acc'] < top1:
+            #    stats['best_acc'] = top1
+            #    logger.info('Best accuracy {}'.format(stats['best_acc']))
+            #    logger.info('Saving model at {}'.format(args.model_file))
+            #    logger.info("Logs saved at {}".format(args.log_file))
+            if epoch % 10 == 0:
                 save(args, ret_model.model, optimizer, args.model_file, epoch=stats['epoch'])
 
 def test_mode(args):
-
-    all_test_exs = load_pickle(args, args.test_file_name)
-    logger.info("Num test paragraphs {}".format(len(all_test_exs.paragraphs)))
-    logger.info("Num test questions {}".format(len(all_test_exs.questions)))
 
     ret_model, optimizer, word_dict, feature_dict = init_from_checkpoint(args)
 
     logger.info("Making data loaders...")
     if args.src == 'arc':
+        ques_data = load_pickle(args, "/mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data/arc/data/web-open/ARC-Challenge-Test")
+        para_data = load_pickle(args, "/mnt/nfs/work1/mccallum/yipeichen/data/multi-step-reasoning/data/arc/data/web-open/arc_corpus_clean")
+        all_test_exs = MultiCorpus(ques_data.args)
+        all_test_exs.questions = ques_data.questions
+        all_test_exs.paragraphs = para_data.paragraphs
         ques_loader, para_loader = make_data_loader(args, all_test_exs)
 
         logger.info("Get top K test paragraph")
-        question_vectors, question_ids = eval_arc(args, ret_model, all_test_exs, ques_loader, 'ques')
-        paragraph_vectors, paragraph_ids = eval_arc(args, ret_model, all_test_exs, para_loader, 'para')
+        question_vectors, question_ids = eval_arc(args, ret_model, ques_loader, 'ques')
+        paragraph_vectors, paragraph_ids = eval_arc(args, ret_model, para_loader, 'para')
 
         _, nn_ids = get_nearest(paragraph_vectors, question_vectors, k=args.num_topk_paras, use_gpu=False)
 
@@ -586,6 +592,10 @@ def test_mode(args):
         save_topk_result(args, nn_ids, all_test_exs, question_ids, paragraph_ids)
 
     else:
+        all_test_exs = load_pickle(args, args.test_file_name)
+        logger.info("Num test paragraphs {}".format(len(all_test_exs.paragraphs)))
+        logger.info("Num test questions {}".format(len(all_test_exs.questions)))
+
         test_loader = make_data_loader(args, all_test_exs)
 
         logger.info("Get top K test paragraph")
@@ -626,7 +636,7 @@ def eval_scitail(args, ret_model, corpus, data_loader, save_scores=True):
     get_topk(corpus)
     #print_vectors(args, para_vectors, question_vectors, corpus, train, test)
 
-def eval_arc(args, ret_model, corpus, data_loader, data_type=None):
+def eval_arc(args, ret_model, data_loader, data_type=None):
     ret_model.model.eval()
     output_vectors = []
     output_ids = []

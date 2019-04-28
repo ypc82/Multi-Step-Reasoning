@@ -28,8 +28,8 @@ class ARCReader():
 
     def read_qafile(self):
         qid, question, choices, answerKey = [], [], [], []
-        logger.info(f"Load {self.qa_path}")
-        with open(self.qa_path) as infile:
+        logger.info(f"Load {self.data_path}")
+        with open(self.data_path) as infile:
             for line in infile:
                 qa_json = json.loads(line)
                 qid.append(qa_json["id"])
@@ -47,12 +47,18 @@ class ARCReader():
         logger.info(f'len(arc_corpus)={len(arc_corpus)}')
 
         sentences = []
-        import ipdb;ipdb.set_trace()
+        sen_lens = {}
         logger.info(f"Tokenize corpus")
         for doc in tqdm(nlp.pipe(arc_corpus, batch_size=10000, n_threads=32), total=len(arc_corpus)):
             if len(doc) < self.min_len or len(doc) > self.max_len:
                 continue
             sentences.append([token.text for token in doc])
+            if len(doc) not in sen_lens:
+                sen_lens[len(doc)] = 0
+            sen_lens[len(doc)] += 1
+        logger.info(f"Save sentence_lens_dic to {'sentence_len.json'}")
+        with open('sentence_len.json', 'w') as f:
+            json.dump(sen_lens, f, indent=4)
 
         return sentences
 
@@ -223,17 +229,27 @@ def read(dataset, args, data_type='train'):
     elif dataset == 'arc_corpus':
         arc_dir = '/home/yipeichen/ARC-Solvers/data/ARC-V1-Feb2018'
         corpus_path = os.path.join(arc_dir, 'ARC_Corpus_1K.txt')
-        output_path = os.path.join(data_dir, 'arc/data/web-open/arc_corpus_clean.pkl')
+        output_path = os.path.join(data_dir, 'arc/data/web-open/arc_corpus_clean_1K.pkl')
 
-        reader = ARCReader(args, corpus_path, min_len=5, max_len=100)
+        reader = ARCReader(args, corpus_path, min_len=1, max_len=100)
         corpus = reader.run_corpus()
 
+        logger.info(f'Save to {output_path}')
+        with open(output_path, 'wb') as outfile:
+            pickle.dump(corpus, outfile)
+    
     elif dataset == 'arc':
+        arc_dir = '/home/yipeichen/ARC-Solvers/data/ARC-V1-Feb2018'
         qa_path = os.path.join(arc_dir, f'ARC-Challenge/ARC-Challenge-{data_type}.jsonl')
-        output_path = os.path.join(data_dir, 'arc/data/web-open/processed_test_1K.pkl')
+        output_path = os.path.join(data_dir, f'arc/data/web-open/ARC-Challenge-{data_type}.pkl')
 
         reader = ARCReader(args, qa_path)
         corpus = reader.run_question()
+
+        logger.info(f'Save to {output_path}')
+        with open(output_path, 'wb') as outfile:
+            pickle.dump(corpus, outfile)
+    
 
     elif dataset == 'scitail':
         scitail_dir = '/mnt/nfs/work1/mccallum/yipeichen/data/SciTailV1.1/predictor_format'
@@ -350,8 +366,8 @@ if __name__ == "__main__":
     #read('scitail', options, 'train')
     #read('scitail', options, 'dev')
     #read('scitail', options, 'test')
-    read('scitail_new', options)
+    #read('scitail_new', options)
 
     #read('arc_corpus', options)
-    #read('arc', options, 'Test')
+    read('arc', options, 'Test')
 
